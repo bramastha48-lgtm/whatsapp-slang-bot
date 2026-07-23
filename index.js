@@ -50,7 +50,7 @@ Aturan: Santai, pakai emoji, jangan terlalu panjang, gunakan format Telegram (*b
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': '***' + key,
+          'Authorization': 'Bearer ' + key,
           'Content-Type': 'application/json',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         },
