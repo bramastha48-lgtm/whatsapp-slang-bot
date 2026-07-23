@@ -31,6 +31,8 @@ async function callGroq(systemPrompt, userMessage, retries = GROQ_KEYS.length) {
       throw new Error('NO_KEY');
     }
 
+    console.log(`Groq: Mencoba key ${i + 1}/${retries}...`);
+
     try {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
@@ -50,6 +52,7 @@ async function callGroq(systemPrompt, userMessage, retries = GROQ_KEYS.length) {
       });
 
       const status = res.status;
+      console.log(`Groq key ${i + 1}: Response status ${status}`);
 
       if (status === 429) {
         console.error(`Groq key ${i + 1}: Rate limit (429), coba key berikutnya...`);
@@ -61,16 +64,28 @@ async function callGroq(systemPrompt, userMessage, retries = GROQ_KEYS.length) {
         continue;
       }
 
+      const responseText = await res.text();
+
       if (!res.ok) {
-        const errText = await res.text();
-        console.error(`Groq key ${i + 1}: Error ${status} - ${errText.substring(0, 200)}`);
+        console.error(`Groq key ${i + 1}: Error ${status} - ${responseText.substring(0, 300)}`);
         continue;
       }
 
-      const data = await res.json();
-      return data.choices?.[0]?.message?.content || null;
+      try {
+        const data = JSON.parse(responseText);
+        const result = data.choices?.[0]?.message?.content;
+        if (result) {
+          console.log(`Groq key ${i + 1}: Berhasil!`);
+          return result;
+        }
+        console.error(`Groq key ${i + 1}: Response kosong - ${responseText.substring(0, 200)}`);
+        continue;
+      } catch (parseErr) {
+        console.error(`Groq key ${i + 1}: JSON parse error - ${responseText.substring(0, 200)}`);
+        continue;
+      }
     } catch (err) {
-      console.error(`Groq key ${i + 1}: Network error - ${err.message}`);
+      console.error(`Groq key ${i + 1}: Error - ${err.message} - ${err.stack?.substring(0, 200)}`);
       continue;
     }
   }
