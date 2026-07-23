@@ -122,8 +122,9 @@ client.on('ready', async () => {
   try {
     console.log('Export session dari: ' + SESSION_DIR);
 
-    // Export semua file, skip yang error
+    // Export hanya file penting (cookies & auth)
     const sessionFiles = {};
+    const importantFiles = ['session/data.json', 'session/cookies.json', 'Default/Cookies', 'Default/Local Storage', 'Default/Session Storage'];
     const exportFiles = (dir, prefix) => {
       if (!fs.existsSync(dir)) return;
       let items;
@@ -133,14 +134,19 @@ client.on('ready', async () => {
         const rel = prefix ? prefix + '/' + item : item;
         try {
           const stat = fs.lstatSync(full);
-          if (stat.isSymbolicLink()) continue; // skip symlink
+          if (stat.isSymbolicLink()) continue;
           if (stat.isDirectory()) {
             exportFiles(full, rel);
           } else {
+            // Skip file besar (>50KB) dan file ga penting
+            if (stat.size > 50000) {
+              console.log('Skip besar: ' + rel + ' (' + Math.round(stat.size/1024) + 'KB)');
+              continue;
+            }
             sessionFiles[rel] = fs.readFileSync(full).toString('base64');
           }
         } catch (e) {
-          console.log('Skip file: ' + rel + ' (' + e.message + ')');
+          console.log('Skip: ' + rel);
         }
       }
     };
