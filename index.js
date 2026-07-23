@@ -120,37 +120,27 @@ client.on('ready', async () => {
 
   // Export session ke base64 dan cetak ke logs
   try {
-    // Cari folder session
-    const sessionDirs = [];
-    const findSession = (dir) => {
-      if (!fs.existsSync(dir)) return;
-      const items = fs.readdirSync(dir);
-      for (const item of items) {
-        const full = path.join(dir, item);
-        if (fs.statSync(full).isDirectory()) {
-          sessionDirs.push(full);
-          findSession(full);
-        }
-      }
-    };
-    findSession(SESSION_DIR);
+    console.log('Export session dari: ' + SESSION_DIR);
 
-    console.log('Session dirs ditemukan: ' + sessionDirs.length);
-
-    // Export semua file
+    // Export semua file, skip yang error
     const sessionFiles = {};
     const exportFiles = (dir, prefix) => {
       if (!fs.existsSync(dir)) return;
-      const items = fs.readdirSync(dir);
+      let items;
+      try { items = fs.readdirSync(dir); } catch(e) { return; }
       for (const item of items) {
         const full = path.join(dir, item);
         const rel = prefix ? prefix + '/' + item : item;
-        if (fs.statSync(full).isDirectory()) {
-          exportFiles(full, rel);
-        } else {
-          try {
+        try {
+          const stat = fs.lstatSync(full);
+          if (stat.isSymbolicLink()) continue; // skip symlink
+          if (stat.isDirectory()) {
+            exportFiles(full, rel);
+          } else {
             sessionFiles[rel] = fs.readFileSync(full).toString('base64');
-          } catch (e) {}
+          }
+        } catch (e) {
+          console.log('Skip file: ' + rel + ' (' + e.message + ')');
         }
       }
     };
