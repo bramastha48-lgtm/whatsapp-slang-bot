@@ -140,17 +140,12 @@ client.on('qr', async (qr) => {
   console.log('  SCAN QR CODE INI DENGAN WHATSAPP');
   console.log('========================================\n');
 
-  // Tampilkan QR sebagai text
-  try {
-    const qrText = await QRCode.toString(qr, { type: 'terminal', small: true });
-    console.log(qrText);
-  } catch (e) {
-    // Fallback: tampilkan QR sebagai link
-    console.log('QR Code (buka link ini di browser):');
-    console.log(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
-  }
+  // Tampilkan QR sebagai link yang bisa diklik
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
+  console.log(`SCAN QR INI: ${qrUrl}`);
 
-  console.log('\nBuka WhatsApp → Linked Devices → Link a Device\n');
+  console.log('\nAtau buka WhatsApp → Linked Devices → Link a Device');
+  console.log('Tunggu QR baru muncul jika link expired\n');
 });
 
 client.on('ready', () => {
