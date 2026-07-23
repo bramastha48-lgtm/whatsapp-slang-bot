@@ -51,7 +51,8 @@ Aturan: Santai, pakai emoji, jangan terlalu panjang, gunakan format Telegram (*b
         method: 'POST',
         headers: {
           'Authorization': '***' + key,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'User-Agent': 'TelegramBot/1.0'
         },
         body: JSON.stringify({
           model: 'llama-3.1-8b-instant',
