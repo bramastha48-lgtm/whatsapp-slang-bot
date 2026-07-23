@@ -1,13 +1,13 @@
 {
-  "name": "slang-translator-bot",
-  "version": "1.0.0",
-  "description": "Telegram bot terjemahan & bahasa gaul dengan Groq AI",
+  "name": "whatsapp-slang-bot",
+  "version": "2.0.0",
+  "description": "WhatsApp bot terjemahan & bahasa gaul dengan Groq AI",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "telegraf": "^4.16.3",
+    "whatsapp-web.js": "^1.26.0",
     "node-fetch": "^2.7.0"
   },
   "engines": {
