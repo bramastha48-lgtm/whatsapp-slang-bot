@@ -1,11 +1,10 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const fetch = require('node-fetch');
-const QRCode = require('qrcode');
 const fs = require('fs');
 const path = require('path');
 
 // ============================================
-//  GROQ AI - ROTASI API KEY
+//  GROQ AI
 // ============================================
 
 const GROQ_KEYS = [
@@ -25,78 +24,101 @@ function getNextKey() {
 }
 
 async function askAI(userMessage) {
-  if (GROQ_KEYS.length === 0) return 'API key belum dikonfigurasi. Tambahkan GROQ_KEY_1 di Railway Variables.';
-
-  const systemPrompt = `Kamu adalah bot WhatsApp yang pintar dan santai. Tugasmu:
-1. DETEKSI OTOMATIS apakah user minta terjemahan, saran slang, atau penjelasan singkatan
-2. Terjemahkan dari bahasa apapun ke bahasa apapun (default: Inggris)
-3. Kasih padanan bahasa gaul Inggris dari kata Indonesia + arti + contoh
-4. Jelaskan singkatan internet slang (cz, rn, ngl, tbh, fr, ong, dll)
-5. Kalau user ngobrol biasa, balas santai dan ramah
-Aturan: Santai tapi sopan, pakai emoji, jangan terlalu panjang.`;
-
+  if (GROQ_KEYS.length === 0) return 'API key belum dikonfigurasi.';
+  const systemPrompt = 'Kamu adalah bot WhatsApp yang pintar dan santai. DETEKSI OTOMATIS apakah user minta terjemahan, saran slang, atau penjelasan singkatan. Terjemahkan dari bahasa apapun ke bahasa apapun (default: Inggris). Kasih padanan bahasa gaul Inggris dari kata Indonesia. Jelaskan singkatan internet slang (cz, rn, ngl, tbh, fr, ong, dll). Kalau user ngobrol biasa, balas santai. Santai tapi sopan, pakai emoji, jangan terlalu panjang.';
   for (let i = 0; i < GROQ_KEYS.length; i++) {
     const key = getNextKey();
-    console.log('Groq: Coba key ' + (i + 1) + '/' + GROQ_KEYS.length);
     try {
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage }
-          ],
-          temperature: 0.7,
-          max_tokens: 1024,
-        }),
+        body: JSON.stringify({ model: 'llama-3.1-8b-instant', messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }], temperature: 0.7, max_tokens: 1024 }),
       });
-      console.log('Groq key ' + (i + 1) + ': Status ' + response.status);
-      if (response.status === 429) { console.log('Rate limit, coba berikutnya...'); continue; }
-      if (response.status === 401) { console.log('Key tidak valid!'); continue; }
-      const text = await response.text();
-      if (response.status !== 200) { console.log('Gagal: ' + text.substring(0, 100)); continue; }
-      const json = JSON.parse(text);
-      const result = json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content;
-      if (result) { console.log('Groq key ' + (i + 1) + ': Berhasil!'); return result; }
-    } catch (err) {
-      console.log('Groq key ' + (i + 1) + ': Error - ' + String(err));
-    }
+      if (res.status !== 200) continue;
+      const data = JSON.parse(await res.text());
+      const r = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      if (r) return r;
+    } catch (e) {}
   }
-  return 'Maaf, semua API key sedang bermasalah. Coba lagi nanti ya~';
+  return 'Maaf, API sedang bermasalah. Coba lagi nanti ya~';
 }
 
 // ============================================
-//  RESTORE SESSION DARI ENV VAR
+//  SESSION - AUTO SAVE/LOAD VIA GITHUB GIST
 // ============================================
 
+const GIST_TOKEN = process.env.GIST_TOKEN || '';
 const SESSION_DIR = path.join(__dirname, 'session_data');
-const SESSION_ENV = process.env.WA_SESSION || '';
 
-// Restore session dari environment variable jika ada
-if (SESSION_ENV && !fs.existsSync(path.join(SESSION_DIR, 'Default'))) {
+async function saveSession() {
   try {
-    console.log('Restore session dari environment variable...');
-    const sessionData = JSON.parse(Buffer.from(SESSION_ENV, 'base64').toString());
-    if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
+    console.log('Save session ke Gist...');
+    const files = {};
+    const walk = (dir, prefix) => {
+      if (!fs.existsSync(dir)) return;
+      let items; try { items = fs.readdirSync(dir); } catch(e) { return; }
+      for (const item of items) {
+        const full = path.join(dir, item);
+        const rel = prefix ? prefix + '/' + item : item;
+        try {
+          const stat = fs.lstatSync(full);
+          if (stat.isSymbolicLink()) continue;
+          if (stat.isDirectory()) { walk(full, rel); }
+          else if (stat.size < 50000) { files[rel] = fs.readFileSync(full).toString('base64'); }
+        } catch(e) {}
+      }
+    };
+    walk(SESSION_DIR, '');
+    const count = Object.keys(files).length;
+    console.log('File session: ' + count);
+    if (count === 0) return;
 
-    // Tulis file-file session
-    for (const [filePath, content] of Object.entries(sessionData)) {
-      const fullPath = path.join(SESSION_DIR, filePath);
-      const dir = path.dirname(fullPath);
+    const res = await fetch('https://api.github.com/gists', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + GIST_TOKEN, 'Content-Type': 'application/json', 'User-Agent': 'wa-bot' },
+      body: JSON.stringify({ description: 'WA Bot Session', files: { 'session.json': { content: JSON.stringify(files) } } }),
+    });
+    const gist = await res.json();
+    if (gist.id) {
+      console.log('========================================');
+      console.log('SESSION TERSIMPAN! GIST_ID = ' + gist.id);
+      console.log('Tambahkan GIST_ID=' + gist.id + ' di Railway Variables');
+      console.log('========================================');
+    } else {
+      console.log('Gagal: ' + JSON.stringify(gist).substring(0, 200));
+    }
+  } catch(e) { console.log('Error save: ' + String(e)); }
+}
+
+async function restoreSession() {
+  const gistId = process.env.GIST_ID;
+  if (!gistId) { console.log('GIST_ID belum diset, scan QR baru'); return; }
+  try {
+    console.log('Restore session dari Gist ' + gistId + '...');
+    const res = await fetch('https://api.github.com/gists/' + gistId, {
+      headers: { 'Authorization': 'Bearer ' + GIST_TOKEN, 'User-Agent': 'wa-bot' }
+    });
+    const gist = await res.json();
+    const file = gist.files && gist.files['session.json'];
+    if (!file) { console.log('Session tidak ditemukan'); return; }
+    const data = JSON.parse(file.content);
+    if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
+    for (const [fp, content] of Object.entries(data)) {
+      const full = path.join(SESSION_DIR, fp);
+      const dir = path.dirname(full);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(fullPath, Buffer.from(content, 'base64'));
+      fs.writeFileSync(full, Buffer.from(content, 'base64'));
     }
     console.log('Session berhasil di-restore!');
-  } catch (err) {
-    console.log('Gagal restore session: ' + String(err));
-  }
+  } catch(e) { console.log('Gagal restore: ' + String(e)); }
 }
 
 // ============================================
 //  WHATSAPP CLIENT
 // ============================================
+
+// Restore session sebelum init
+restoreSession();
 
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: SESSION_DIR }),
@@ -106,77 +128,21 @@ const client = new Client({
   },
 });
 
-client.on('qr', async (qr) => {
+client.on('qr', (qr) => {
   console.log('========================================');
-  console.log('  SCAN QR CODE INI DENGAN WHATSAPP');
+  console.log('SCAN QR: https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr));
   console.log('========================================');
-  const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr);
-  console.log('SCAN DI SINI: ' + qrUrl);
 });
 
 client.on('ready', async () => {
   console.log('Bot WhatsApp siap!');
-  console.log('Groq API keys: ' + GROQ_KEYS.length + ' tersedia');
-
-  // Export session ke base64 dan cetak ke logs
-  try {
-    console.log('Export session dari: ' + SESSION_DIR);
-
-    // Export hanya file penting (cookies & auth)
-    const sessionFiles = {};
-    const importantFiles = ['session/data.json', 'session/cookies.json', 'Default/Cookies', 'Default/Local Storage', 'Default/Session Storage'];
-    const exportFiles = (dir, prefix) => {
-      if (!fs.existsSync(dir)) return;
-      let items;
-      try { items = fs.readdirSync(dir); } catch(e) { return; }
-      for (const item of items) {
-        const full = path.join(dir, item);
-        const rel = prefix ? prefix + '/' + item : item;
-        try {
-          const stat = fs.lstatSync(full);
-          if (stat.isSymbolicLink()) continue;
-          if (stat.isDirectory()) {
-            exportFiles(full, rel);
-          } else {
-            // Skip file besar (>50KB) dan file ga penting
-            if (stat.size > 50000) {
-              console.log('Skip besar: ' + rel + ' (' + Math.round(stat.size/1024) + 'KB)');
-              continue;
-            }
-            sessionFiles[rel] = fs.readFileSync(full).toString('base64');
-          }
-        } catch (e) {
-          console.log('Skip: ' + rel);
-        }
-      }
-    };
-    exportFiles(SESSION_DIR, '');
-
-    const fileCount = Object.keys(sessionFiles).length;
-    console.log('File session: ' + fileCount);
-
-    if (fileCount > 0) {
-      const sessionBase64 = Buffer.from(JSON.stringify(sessionFiles)).toString('base64');
-      console.log('');
-      console.log('========================================');
-      console.log('  SESSION DATA - COPY INI KE RAILWAY');
-      console.log('========================================');
-      console.log('');
-      console.log('ENV VAR NAME: WA_SESSION');
-      console.log('ENV VAR VALUE:');
-      console.log(sessionBase64);
-      console.log('');
-      console.log('========================================');
-    } else {
-      console.log('Tidak ada file session untuk di-export');
-    }
-  } catch (err) {
-    console.log('Gagal export session: ' + String(err));
-  }
+  console.log('Groq keys: ' + GROQ_KEYS.length);
+  // Auto-save session ke Gist
+  if (GIST_TOKEN) await saveSession();
 });
 
 client.on('authenticated', () => console.log('Autentikasi berhasil!'));
-client.on('auth_failure', (msg) => console.log('Autentikasi gagal: ' + msg));
+client.on('auth_failure', (msg) => console.log('Auth gagal: ' + msg));
 client.on('disconnected', (reason) => console.log('Terputus: ' + reason));
 
 // ============================================
@@ -188,64 +154,29 @@ const busy = {};
 client.on('message', async (message) => {
   try {
     const body = message.body ? message.body.trim() : '';
-    if (!body) return;
-    if (message.from === 'status@broadcast') return;
-
-    if (message.from.endsWith('@g.us')) {
-      const isMentioned = message.mentionedIds && message.mentionedIds.length > 0;
-      if (!isMentioned) return;
-    }
-
-    if (busy[message.from]) {
-      await message.reply('Sabar ya, masih proses pesan sebelumnya...');
-      return;
-    }
-
+    if (!body || message.from === 'status@broadcast') return;
+    if (message.from.endsWith('@g.us') && (!message.mentionedIds || !message.mentionedIds.length)) return;
+    if (busy[message.from]) { await message.reply('Sabar ya, masih proses...'); return; }
     busy[message.from] = true;
-
     try {
       const chat = await message.getChat();
       await chat.sendStateTyping();
-      console.log('Pesan masuk: ' + body.substring(0, 50));
       const reply = await askAI(body);
       await message.reply(reply);
-      console.log('Reply terkirim');
-    } catch (err) {
-      console.log('Error: ' + String(err));
-      await message.reply('Error: ' + String(err));
-    } finally {
-      delete busy[message.from];
-    }
-  } catch (err) {
-    console.log('Error luar: ' + String(err));
-  }
+    } catch(e) { await message.reply('Error: ' + String(e)); }
+    finally { delete busy[message.from]; }
+  } catch(e) {}
 });
 
-// ============================================
-//  MEMORY MANAGEMENT
-// ============================================
-
+// Memory limit
 setInterval(() => {
-  const mem = process.memoryUsage();
-  const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
+  const mb = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
   if (global.gc) global.gc();
-  if (heapMB > 300) {
-    console.log('Memory terlalu tinggi (' + heapMB + 'MB), restart...');
-    process.exit(1);
-  }
+  if (mb > 300) { console.log('Memory ' + mb + 'MB, restart'); process.exit(1); }
 }, 60000);
 
-// ============================================
-//  START
-// ============================================
-
-console.log('Memulai bot WhatsApp...');
-console.log('API keys: ' + GROQ_KEYS.length);
-if (GROQ_KEYS.length === 0) console.error('TIDAK ADA GROQ_KEY! Tambahkan di Railway Variables.');
-
+console.log('Memulai bot...');
 client.initialize();
 
-process.on('SIGINT', async () => { await client.destroy(); process.exit(0); });
 process.on('SIGTERM', async () => { await client.destroy(); process.exit(0); });
-process.on('uncaughtException', (err) => console.log('Uncaught: ' + String(err)));
-process.on('unhandledRejection', (err) => console.log('Unhandled: ' + String(err)));
+process.on('uncaughtException', (e) => console.log('Err: ' + String(e)));
