@@ -167,7 +167,8 @@ async function restoreSession() {
 //  WHATSAPP CLIENT
 // ============================================
 
-restoreSession();
+// Restore session - wrapped in try-catch
+try { restoreSession(); } catch(e) { console.log('Restore skip: ' + e.message); }
 
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: SESSION_DIR }),
@@ -232,7 +233,12 @@ setInterval(() => {
 
 console.log('Starting WhatsApp bot...');
 console.log('Groq keys: ' + GROQ_KEYS.length);
-client.initialize();
+
+client.initialize().catch(e => {
+  console.log('Init error: ' + e.message);
+  console.log('Restarting in 5s...');
+  setTimeout(() => process.exit(1), 5000);
+});
 
 process.on('SIGTERM', async () => { await client.destroy(); process.exit(0); });
 process.on('uncaughtException', (e) => console.log('Err: ' + e.message));
