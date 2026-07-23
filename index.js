@@ -7,11 +7,11 @@ const fetch = require('node-fetch');
 // ============================================
 
 const GROQ_KEYS = [
-  process.env.GROQ_KEY_1,
-  process.env.GROQ_KEY_2,
-  process.env.GROQ_KEY_3,
-  process.env.GROQ_KEY_4,
-  process.env.GROQ_KEY_5,
+  process.env.GROQ_KEY_1 || 'gsk_mm…ix3e',
+  process.env.GROQ_KEY_2 || 'gsk_bL…nYdO',
+  process.env.GROQ_KEY_3 || 'gsk_Ao…crUC',
+  process.env.GROQ_KEY_4 || 'gsk_XE…y2b9',
+  process.env.GROQ_KEY_5 || 'gsk_p9…ZKM7',
 ].filter(Boolean);
 
 let currentKeyIndex = 0;
