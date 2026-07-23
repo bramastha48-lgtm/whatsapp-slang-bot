@@ -7,11 +7,11 @@ const QRCode = require('qrcode');
 // ============================================
 
 const GROQ_KEYS = [
-  process.env.GROQ_KEY_1 || 'gsk_mm…ix3e',
-  process.env.GROQ_KEY_2 || 'gsk_bL…nYdO',
-  process.env.GROQ_KEY_3 || 'gsk_Ao…crUC',
-  process.env.GROQ_KEY_4 || 'gsk_XE…y2b9',
-  process.env.GROQ_KEY_5 || 'gsk_p9…ZKM7',
+  process.env.GROQ_KEY_1,
+  process.env.GROQ_KEY_2,
+  process.env.GROQ_KEY_3,
+  process.env.GROQ_KEY_4,
+  process.env.GROQ_KEY_5,
 ].filter(Boolean);
 
 let currentKeyIndex = 0;
@@ -23,21 +23,48 @@ function getNextKey() {
   return key;
 }
 
-async function callGroq(systemPrompt, userMessage, retries = GROQ_KEYS.length) {
-  for (let i = 0; i < retries; i++) {
-    const key = getNextKey();
-    if (!key) {
-      console.error('Tidak ada API key Groq tersedia');
-      throw new Error('NO_KEY');
-    }
+// ============================================
+//  GROQ API CALL
+// ============================================
 
-    console.log(`Groq: Mencoba key ${i + 1}/${retries}...`);
+async function askAI(userMessage) {
+  if (GROQ_KEYS.length === 0) {
+    console.error('TIDAK ADA API KEY GROQ!');
+    return null;
+  }
+
+  const systemPrompt = `Kamu adalah bot WhatsApp yang pintar dan santai. Tugasmu:
+
+1. DETEKSI OTOMATIS apakah user meminta:
+   - Terjemahan biasa (dari bahasa apapun ke bahasa apapun)
+   - Saran bahasa gaul/slang Inggris
+   - Penjelasan singkatan internet slang (cz, rn, ngl, tbh, fr, ong, dll)
+
+2. JIKA user minta terjemahan:
+   - Terjemahkan ke bahasa yang diminta (default: Inggris)
+   - Jika ada slang/bahasa gaul, jelaskan juga artinya
+
+3. JIKA user minta saran bahasa gaul / slang:
+   - Kasih padanan bahasa gaul Inggris dari kata/frasa Indonesia
+   - Sertakan arti dan contoh kalimat
+
+4. JIKA user kirim singkatan Inggris (cz, rn, ngl, tbh, dll):
+   - Jelaskan kepanjangan dan artinya
+
+5. JIKA user mengobrol biasa:
+   - Balas santai dan ramah, pakai bahasa sehari-hari
+
+Aturan: Santai tapi sopan, gunakan emoji, jangan terlalu panjang.`;
+
+  for (let i = 0; i < GROQ_KEYS.length; i++) {
+    const key = getNextKey();
+    console.log(`Groq: Coba key ${i + 1}/${GROQ_KEYS.length}`);
 
     try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${key}`,
+          'Authorization': 'Bearer ' + key,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -51,268 +78,159 @@ async function callGroq(systemPrompt, userMessage, retries = GROQ_KEYS.length) {
         }),
       });
 
-      const status = res.status;
-      console.log(`Groq key ${i + 1}: Response status ${status}`);
+      console.log(`Groq key ${i + 1}: Status ${response.status}`);
 
-      if (status === 429) {
-        console.error(`Groq key ${i + 1}: Rate limit (429), coba key berikutnya...`);
+      if (response.status === 429) {
+        console.log(`Groq key ${i + 1}: Rate limit, coba berikutnya...`);
         continue;
       }
 
-      if (status === 401) {
-        console.error(`Groq key ${i + 1}: Invalid API key (401)`);
+      if (response.status === 401) {
+        console.log(`Groq key ${i + 1}: Key tidak valid!`);
         continue;
       }
 
-      const responseText = await res.text();
+      const text = await response.text();
+      console.log(`Groq key ${i + 1}: Response ${text.substring(0, 100)}`);
 
-      if (!res.ok) {
-        console.error(`Groq key ${i + 1}: Error ${status} - ${responseText.substring(0, 300)}`);
+      if (response.status !== 200) {
+        console.log(`Groq key ${i + 1}: Gagal`);
         continue;
       }
 
-      try {
-        const data = JSON.parse(responseText);
-        const result = data.choices?.[0]?.message?.content;
-        if (result) {
-          console.log(`Groq key ${i + 1}: Berhasil!`);
-          return result;
-        }
-        console.error(`Groq key ${i + 1}: Response kosong - ${responseText.substring(0, 200)}`);
-        continue;
-      } catch (parseErr) {
-        console.error(`Groq key ${i + 1}: JSON parse error - ${responseText.substring(0, 200)}`);
-        continue;
+      const json = JSON.parse(text);
+      const result = json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content;
+      if (result) {
+        console.log(`Groq key ${i + 1}: Berhasil!`);
+        return result;
       }
     } catch (err) {
-      console.error(`Groq key ${i + 1}: Error - ${err.message} - ${err.stack?.substring(0, 200)}`);
-      continue;
+      console.log(`Groq key ${i + 1}: Error - ${String(err)}`);
     }
   }
-  throw new Error('ALL_KEYS_FAILED');
+
+  console.log('Semua Groq key gagal');
+  return null;
 }
-
-// ============================================
-//  SYSTEM PROMPT UNTUK AI
-// ============================================
-
-const SYSTEM_PROMPT = `Kamu adalah bot WhatsApp yang pintar dan santai. Tugasmu:
-
-1. **DETEKSI OTOMATIS** apakah user meminta:
-   - Terjemahan biasa (dari bahasa apapun ke bahasa apapun)
-   - Saran bahasa gaul/slang Inggris
-   - Penjelasan singkatan internet slang (cz, rn, ngl, tbh, fr, ong, dll)
-
-2. **JIKA user minta terjemahan:**
-   - Terjemahkan ke bahasa yang diminta (default: Inggris)
-   - Jika ada slang/bahasa gaul, jelaskan juga artinya
-   - Format: kasih terjemahan + penjelasan slang jika ada
-
-3. **JIKA user minta saran bahasa gaul / slang:**
-   - Kasih padanan bahasa gaul Inggris dari kata/frasa Indonesia yang dikirim
-   - Sertakan arti, contoh kalimat, dan konteks penggunaan
-   - Bisa kasih beberapa alternatif
-
-4. **JIKA user kirim singkatan Inggris (cz, rn, ngl, tbh, dll):**
-   - Jelaskan kepanjangan dan artinya
-   - Kasih contoh penggunaan
-
-5. **JIKA user mengobrol biasa / sapaan:**
-   - Balas dengan santai dan ramai, pakai bahasa sehari-hari
-   - Bisa pakai emoji
-
-6. **JIKA tidak jelas:**
-   - Tanya balik dengan sopan
-
-Aturan:
-- Selalu gunakan bahasa yang santai dan gaul (tapi sopan)
-- Jangan terlalu panjang, cukup padat dan jelas
-- Gunakan emoji secukupnya
-- Jika pesan mengandung campuran Indonesia-Inggris, tangani dengan bijak
-- Untuk terjemahan, selalu tampilkan dalam format yang rapi`;
 
 // ============================================
 //  WHATSAPP CLIENT
 // ============================================
 
 const client = new Client({
-  authStrategy: new LocalAuth({
-    dataPath: './session_data'
-  }),
+  authStrategy: new LocalAuth({ dataPath: './session_data' }),
   puppeteer: {
     headless: true,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--single-process',
       '--disable-gpu',
-      '--disable-extensions',
-      '--disable-background-timer-throttling',
-      '--disable-backgrounding-occluded-windows',
-      '--disable-renderer-backgrounding',
-      '--memory-pressure-off',
-      '--js-flags=--max-old-space-size=256'
+      '--single-process',
     ],
   },
 });
 
 client.on('qr', async (qr) => {
-  console.log('\n========================================');
+  console.log('========================================');
   console.log('  SCAN QR CODE INI DENGAN WHATSAPP');
-  console.log('========================================\n');
-
-  // Tampilkan QR sebagai link yang bisa diklik
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`;
-  console.log(`SCAN QR INI: ${qrUrl}`);
-
-  console.log('\nAtau buka WhatsApp → Linked Devices → Link a Device');
-  console.log('Tunggu QR baru muncul jika link expired\n');
+  console.log('========================================');
+  const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr);
+  console.log('SCAN DI SINI: ' + qrUrl);
+  console.log('Atau buka WhatsApp -> Linked Devices -> Link a Device');
 });
 
 client.on('ready', () => {
-  console.log('✅ Bot WhatsApp siap!');
-  console.log(`🔑 Groq API keys: ${GROQ_KEYS.length} tersedia`);
-  if (GROQ_KEYS.length === 0) {
-    console.error('❌ TIDAK ADA API KEY GROQ! Set environment variable GROQ_KEY_1 sampai GROQ_KEY_5');
-  }
+  console.log('Bot WhatsApp siap!');
+  console.log('Groq API keys: ' + GROQ_KEYS.length + ' tersedia');
 });
 
-client.on('authenticated', () => console.log('🔐 Autentikasi berhasil!'));
-client.on('auth_failure', (msg) => console.error('❌ Autentikasi gagal:', msg));
-client.on('disconnected', (reason) => console.log('🔌 Terputus:', reason));
+client.on('authenticated', () => console.log('Autentikasi berhasil!'));
+client.on('auth_failure', (msg) => console.log('Autentikasi gagal: ' + msg));
+client.on('disconnected', (reason) => console.log('Terputus: ' + reason));
 
 // ============================================
-//  HANDLER PESAN
+//  HANDLE PESAN
 // ============================================
 
-// Anti-spam: track processing per user
-const processing = new Set();
+const busy = {};
 
 client.on('message', async (message) => {
   try {
-    const body = message.body.trim();
+    const body = message.body ? message.body.trim() : '';
     if (!body) return;
-
-    // Skip status broadcast & grup (kecuali di-mention)
     if (message.from === 'status@broadcast') return;
+
+    // Grup: hanya respon jika di-mention
     if (message.from.endsWith('@g.us')) {
-      // Di grup: hanya respon jika di-mention
-      const mentionedMe = message.mentionedIds?.includes(client.info?.wid?._serialized);
-      if (!mentionedMe) return;
-      // Hapus mention dari pesan
-      const cleanBody = body.replace(/@\d+/g, '').trim();
-      if (!cleanBody) return;
-      await handleAI(message, cleanBody);
+      const isMentioned = message.mentionedIds && message.mentionedIds.length > 0;
+      if (!isMentioned) return;
+    }
+
+    // Anti-spam
+    if (busy[message.from]) {
+      await message.reply('Sabar ya, masih proses pesan sebelumnya...');
       return;
     }
 
-    await handleAI(message, body);
+    busy[message.from] = true;
 
+    try {
+      // Typing indicator
+      const chat = await message.getChat();
+      await chat.sendStateTyping();
+
+      // Panggil AI
+      console.log('Pesan masuk: ' + body.substring(0, 50));
+      const reply = await askAI(body);
+
+      if (reply) {
+        await message.reply(reply);
+        console.log('Reply terkirim');
+      } else {
+        await message.reply('Aku lagi bingung nih, coba ulangi ya...');
+      }
+    } catch (err) {
+      console.log('Error handle pesan: ' + String(err));
+      await message.reply('Error: ' + String(err));
+    } finally {
+      delete busy[message.from];
+    }
   } catch (err) {
-    console.error('Error:', err.message);
+    console.log('Error luar: ' + String(err));
   }
 });
 
-async function handleAI(message, body) {
-  // Anti-spam
-  const userKey = message.from;
-  if (processing.has(userKey)) {
-    await message.reply('⏳ Sabar ya, masih proses pesan sebelumnya...');
-    return;
-  }
-
-  processing.add(userKey);
-
-  try {
-    // Kirim typing indicator
-    const chat = await message.getChat();
-    await chat.sendStateTyping();
-
-    // Panggil Groq AI
-    const response = await callGroq(SYSTEM_PROMPT, body);
-
-    if (response) {
-      await message.reply(response);
-    } else {
-      await message.reply('😵 Aku lagi bingung nih, coba ulangi ya...');
-    }
-  } catch (err) {
-    console.error('AI Error:', err.message);
-    if (err.message === 'NO_KEY') {
-      await message.reply('⚠️ API key belum dikonfigurasi. Hubungi admin.');
-    } else if (err.message === 'ALL_KEYS_FAILED') {
-      await message.reply('⚠️ Semua API key gagal. Kemungkinan limit habis atau key tidak valid. Hubungi admin.');
-    } else {
-      await message.reply(`⚠️ Error: ${err.message}`);
-    }
-  } finally {
-    processing.delete(userKey);
-  }
-}
-
 // ============================================
-//  GRACEFUL SHUTDOWN & MEMORY MANAGEMENT
+//  MEMORY MANAGEMENT
 // ============================================
 
-// ============================================
-//  MEMORY LIMITER - Maksimal 300MB
-// ============================================
-const MEMORY_LIMIT_MB = 300;
-
-function checkMemory() {
-  const used = process.memoryUsage();
-  const heapUsedMB = Math.round(used.heapUsed / 1024 / 1024);
-  const rssMB = Math.round(used.rss / 1024 / 1024);
-
-  if (heapUsedMB > MEMORY_LIMIT_MB * 0.8) {
-    console.log(`⚠️ Memory tinggi: heap=${heapUsedMB}MB, rss=${rssMB}MB — GC dipaksa`);
-    if (global.gc) global.gc();
-  }
-
-  if (rssMB > MEMORY_LIMIT_MB) {
-    console.error(`❌ Memory limit terlampaui (${rssMB}MB > ${MEMORY_LIMIT_MB}MB) — restart...`);
-    process.exit(1); // Railway auto-restart
-  }
-}
-
-// Cek memory setiap 30 detik
-setInterval(checkMemory, 30000);
-
-// Bersihkan memory secara berkala
 setInterval(() => {
+  const mem = process.memoryUsage();
+  const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
+  console.log('Memory: ' + heapMB + 'MB');
   if (global.gc) global.gc();
+  if (heapMB > 300) {
+    console.log('Memory terlalu tinggi, restart...');
+    process.exit(1);
+  }
 }, 60000);
-
-process.on('SIGINT', async () => {
-  console.log('\n🛑 Mematikan bot...');
-  await client.destroy();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  console.log('\n🛑 Mematikan bot...');
-  await client.destroy();
-  process.exit(0);
-});
-
-// Handle unhandled errors
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection:', reason);
-});
-
-process.on('uncaughtException', (err) => {
-  console.error('Uncaught Exception:', err);
-});
 
 // ============================================
 //  START
 // ============================================
 
-console.log('🚀 Memulai bot WhatsApp (Groq AI)...');
-console.log('📱 Scan QR code untuk login\n');
+console.log('Memulai bot WhatsApp...');
+console.log('API keys ditemukan: ' + GROQ_KEYS.length);
+
+if (GROQ_KEYS.length === 0) {
+  console.error('PERINGATAN: Tidak ada GROQ_KEY di environment variables!');
+  console.error('Tambahkan GROQ_KEY_1, GROQ_KEY_2, dll di Railway Variables');
+}
 
 client.initialize();
+
+process.on('SIGINT', async () => { await client.destroy(); process.exit(0); });
+process.on('SIGTERM', async () => { await client.destroy(); process.exit(0); });
+process.on('uncaughtException', (err) => console.log('Uncaught: ' + String(err)));
+process.on('unhandledRejection', (err) => console.log('Unhandled: ' + String(err)));
