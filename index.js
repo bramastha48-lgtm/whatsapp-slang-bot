@@ -26,7 +26,10 @@ function getNextKey() {
 async function callGroq(systemPrompt, userMessage, retries = GROQ_KEYS.length) {
   for (let i = 0; i < retries; i++) {
     const key = getNextKey();
-    if (!key) throw new Error('Tidak ada API key Groq yang tersedia');
+    if (!key) {
+      console.error('Tidak ada API key Groq tersedia');
+      throw new Error('NO_KEY');
+    }
 
     try {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -46,25 +49,32 @@ async function callGroq(systemPrompt, userMessage, retries = GROQ_KEYS.length) {
         }),
       });
 
-      if (res.status === 429) {
-        console.log(`⚠️ Rate limit di key ${i + 1}, coba key berikutnya...`);
+      const status = res.status;
+
+      if (status === 429) {
+        console.error(`Groq key ${i + 1}: Rate limit (429), coba key berikutnya...`);
+        continue;
+      }
+
+      if (status === 401) {
+        console.error(`Groq key ${i + 1}: Invalid API key (401)`);
         continue;
       }
 
       if (!res.ok) {
-        const err = await res.text();
-        console.error(`Groq error (${res.status}):`, err);
+        const errText = await res.text();
+        console.error(`Groq key ${i + 1}: Error ${status} - ${errText.substring(0, 200)}`);
         continue;
       }
 
       const data = await res.json();
       return data.choices?.[0]?.message?.content || null;
     } catch (err) {
-      console.error(`Groq call error:`, err.message);
+      console.error(`Groq key ${i + 1}: Network error - ${err.message}`);
       continue;
     }
   }
-  throw new Error('Semua Groq API key gagal');
+  throw new Error('ALL_KEYS_FAILED');
 }
 
 // ============================================
@@ -151,6 +161,9 @@ client.on('qr', async (qr) => {
 client.on('ready', () => {
   console.log('✅ Bot WhatsApp siap!');
   console.log(`🔑 Groq API keys: ${GROQ_KEYS.length} tersedia`);
+  if (GROQ_KEYS.length === 0) {
+    console.error('❌ TIDAK ADA API KEY GROQ! Set environment variable GROQ_KEY_1 sampai GROQ_KEY_5');
+  }
 });
 
 client.on('authenticated', () => console.log('🔐 Autentikasi berhasil!'));
@@ -214,7 +227,13 @@ async function handleAI(message, body) {
     }
   } catch (err) {
     console.error('AI Error:', err.message);
-    await message.reply('⚠️ Lagi ada gangguan, coba beberapa saat lagi ya~');
+    if (err.message === 'NO_KEY') {
+      await message.reply('⚠️ API key belum dikonfigurasi. Hubungi admin.');
+    } else if (err.message === 'ALL_KEYS_FAILED') {
+      await message.reply('⚠️ Semua API key gagal. Kemungkinan limit habis atau key tidak valid. Hubungi admin.');
+    } else {
+      await message.reply(`⚠️ Error: ${err.message}`);
+    }
   } finally {
     processing.delete(userKey);
   }
