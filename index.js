@@ -219,6 +219,30 @@ async function handleAI(message, body) {
 //  GRACEFUL SHUTDOWN & MEMORY MANAGEMENT
 // ============================================
 
+// ============================================
+//  MEMORY LIMITER - Maksimal 300MB
+// ============================================
+const MEMORY_LIMIT_MB = 300;
+
+function checkMemory() {
+  const used = process.memoryUsage();
+  const heapUsedMB = Math.round(used.heapUsed / 1024 / 1024);
+  const rssMB = Math.round(used.rss / 1024 / 1024);
+
+  if (heapUsedMB > MEMORY_LIMIT_MB * 0.8) {
+    console.log(`⚠️ Memory tinggi: heap=${heapUsedMB}MB, rss=${rssMB}MB — GC dipaksa`);
+    if (global.gc) global.gc();
+  }
+
+  if (rssMB > MEMORY_LIMIT_MB) {
+    console.error(`❌ Memory limit terlampaui (${rssMB}MB > ${MEMORY_LIMIT_MB}MB) — restart...`);
+    process.exit(1); // Railway auto-restart
+  }
+}
+
+// Cek memory setiap 30 detik
+setInterval(checkMemory, 30000);
+
 // Bersihkan memory secara berkala
 setInterval(() => {
   if (global.gc) global.gc();

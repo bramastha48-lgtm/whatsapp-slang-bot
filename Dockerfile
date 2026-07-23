@@ -15,7 +15,10 @@ RUN apt-get update && apt-get install -y \
 
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-ENV NODE_OPTIONS="--max-old-space-size=256"
+# Batasi memory Node.js maksimal 300MB
+ENV NODE_OPTIONS="--max-old-space-size=300"
+# Matikan halaman yang ga dipake
+ENV PUPPETEER_CHROMIUM_REVISION=1
 
 WORKDIR /app
 
@@ -26,4 +29,4 @@ COPY . .
 
 RUN mkdir -p session_data
 
-CMD ["node", "--expose-gc", "index.js"]
+CMD ["node", "--expose-gc", "--max-old-space-size=300", "index.js"]
