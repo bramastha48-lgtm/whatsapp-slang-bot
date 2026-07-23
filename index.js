@@ -52,7 +52,7 @@ Aturan: Santai, pakai emoji, jangan terlalu panjang, gunakan format Telegram (*b
         headers: {
           'Authorization': '***' + key,
           'Content-Type': 'application/json',
-          'User-Agent': 'TelegramBot/1.0'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         },
         body: JSON.stringify({
           model: 'llama-3.1-8b-instant',
