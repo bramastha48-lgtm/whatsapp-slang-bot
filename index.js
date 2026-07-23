@@ -120,26 +120,47 @@ client.on('ready', async () => {
 
   // Export session ke base64 dan cetak ke logs
   try {
-    const sessionFiles = {};
-    const sessionPath = path.join(SESSION_DIR, 'Default');
-
-    if (fs.existsSync(sessionPath)) {
-      const walkDir = (dir, prefix) => {
-        const items = fs.readdirSync(dir);
-        for (const item of items) {
-          const fullPath = path.join(dir, item);
-          const relPath = prefix ? prefix + '/' + item : item;
-          if (fs.statSync(fullPath).isDirectory()) {
-            walkDir(fullPath, relPath);
-          } else {
-            sessionFiles[relPath] = fs.readFileSync(fullPath).toString('base64');
-          }
+    // Cari folder session
+    const sessionDirs = [];
+    const findSession = (dir) => {
+      if (!fs.existsSync(dir)) return;
+      const items = fs.readdirSync(dir);
+      for (const item of items) {
+        const full = path.join(dir, item);
+        if (fs.statSync(full).isDirectory()) {
+          sessionDirs.push(full);
+          findSession(full);
         }
-      };
-      walkDir(sessionPath, 'Default');
+      }
+    };
+    findSession(SESSION_DIR);
 
+    console.log('Session dirs ditemukan: ' + sessionDirs.length);
+
+    // Export semua file
+    const sessionFiles = {};
+    const exportFiles = (dir, prefix) => {
+      if (!fs.existsSync(dir)) return;
+      const items = fs.readdirSync(dir);
+      for (const item of items) {
+        const full = path.join(dir, item);
+        const rel = prefix ? prefix + '/' + item : item;
+        if (fs.statSync(full).isDirectory()) {
+          exportFiles(full, rel);
+        } else {
+          try {
+            sessionFiles[rel] = fs.readFileSync(full).toString('base64');
+          } catch (e) {}
+        }
+      }
+    };
+    exportFiles(SESSION_DIR, '');
+
+    const fileCount = Object.keys(sessionFiles).length;
+    console.log('File session: ' + fileCount);
+
+    if (fileCount > 0) {
       const sessionBase64 = Buffer.from(JSON.stringify(sessionFiles)).toString('base64');
-
       console.log('');
       console.log('========================================');
       console.log('  SESSION DATA - COPY INI KE RAILWAY');
@@ -150,8 +171,8 @@ client.on('ready', async () => {
       console.log(sessionBase64);
       console.log('');
       console.log('========================================');
-      console.log('Setelah ini, Redeploy ga perlu scan QR lagi!');
-      console.log('========================================');
+    } else {
+      console.log('Tidak ada file session untuk di-export');
     }
   } catch (err) {
     console.log('Gagal export session: ' + String(err));
