@@ -42,7 +42,10 @@ Aturan penting:
 - Terjemahan harus KALIMAT UTUH yang natural, BUKAN kata per kata.
 - Contoh benar: "kenapa kamu tidak chat aku?" -> "Why haven't you messaged me?"
 - Contoh salah: "Kenapa -> Why, kamu -> you" (JANGAN seperti ini)
-- Santai, pakai emoji, jangan terlalu panjang.`;
+- JANGAN gunakan format *bold* atau _italic_ karena WhatsApp tidak mendukungnya dengan baik.
+- JANGAN tambahkan adegan/roleplay seperti *guling-gulingan*, *canggung*, *bingung* dll.
+- Jika kasih contoh, gunakan format bernomor: 1. 2. 3. dst.
+- Santai, pakai emoji, jangan terlalu panjang, tulis dengan rapi dan jelas.`;
 
   for (let i = 0; i < GROQ_KEYS.length; i++) {
     const key = nextKey();
