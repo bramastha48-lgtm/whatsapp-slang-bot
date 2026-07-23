@@ -47,7 +47,7 @@ async function askAI(userMessage) {
 //  SESSION - AUTO SAVE/LOAD VIA GITHUB GIST
 // ============================================
 
-const GIST_TOKEN = process.env.GIST_TOKEN || '';
+const GIST_TOKEN = process.env.GIST_TOKEN || 'ghp_q0…IFyN';
 const SESSION_DIR = path.join(__dirname, 'session_data');
 
 async function saveSession() {
