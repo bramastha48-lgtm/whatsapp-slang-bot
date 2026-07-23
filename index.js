@@ -5,7 +5,7 @@ const fetch = require('node-fetch');
 //  CONFIG
 // ============================================
 
-const TELEGRAM_TOKEN = proces…OKEN || '842238…YSrU';
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || '';
 
 const GROQ_KEYS = [
   process.env.GROQ_KEY_1,
