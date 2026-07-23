@@ -1,6 +1,6 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
 const fetch = require('node-fetch');
+const QRCode = require('qrcode');
 
 // ============================================
 //  GROQ AI - ROTASI API KEY
@@ -135,11 +135,21 @@ const client = new Client({
   },
 });
 
-client.on('qr', (qr) => {
+client.on('qr', async (qr) => {
   console.log('\n========================================');
   console.log('  SCAN QR CODE INI DENGAN WHATSAPP');
   console.log('========================================\n');
-  qrcode.generateTerminal(qr, { small: true });
+
+  // Tampilkan QR sebagai text
+  try {
+    const qrText = await QRCode.toString(qr, { type: 'terminal', small: true });
+    console.log(qrText);
+  } catch (e) {
+    // Fallback: tampilkan QR sebagai link
+    console.log('QR Code (buka link ini di browser):');
+    console.log(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
+  }
+
   console.log('\nBuka WhatsApp → Linked Devices → Link a Device\n');
 });
 
