@@ -1,11 +1,11 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Telegraf } = require('telegraf');
 const fetch = require('node-fetch');
-const fs = require('fs');
-const path = require('path');
 
 // ============================================
-//  GROQ AI - 5 API KEY
+//  CONFIG
 // ============================================
+
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || '8422389122:AAGohYW4QLme2qmw3ISkMGNTdwUfuMHYSrU';
 
 const GROQ_KEYS = [
   process.env.GROQ_KEY_1,
@@ -23,22 +23,34 @@ function nextKey() {
   return k;
 }
 
-async function askAI(msg) {
-  if (!GROQ_KEYS.length) {
-    console.log('TIDAK ADA GROQ KEY!');
-    return 'API key belum dikonfigurasi.';
-  }
+// ============================================
+//  GROQ AI
+// ============================================
 
-  const sys = 'Kamu adalah bot WhatsApp yang pintar dan santai. DETEKSI OTOMATIS apakah user minta terjemahan, saran slang, atau penjelasan singkatan. Terjemahkan dari bahasa apapun ke bahasa apapun (default: Inggris). Kasih padanan bahasa gaul Inggris dari kata Indonesia. Jelaskan singkatan internet slang (cz, rn, ngl, tbh, fr, ong, dll). Kalau user ngobrol biasa, balas santai. Santai tapi sopan, pakai emoji, jangan terlalu panjang.';
+async function askAI(msg) {
+  if (!GROQ_KEYS.length) return '❌ API key belum dikonfigurasi.';
+
+  const sys = `Kamu adalah bot Telegram yang pintar dan santai. Tugasmu:
+
+1. DETEKSI OTOMATIS apakah user minta:
+   - Terjemahan (dari bahasa apapun ke bahasa apapun, default Inggris)
+   - Saran bahasa gaul/slang Inggris dari kata Indonesia
+   - Penjelasan singkatan internet slang (cz, rn, ngl, tbh, fr, ong, dll)
+
+2. JIKA minta terjemahan → terjemahkan + jelaskan slang jika ada
+3. JIKA minta saran slang → kasih padanan gaul Inggris + arti + contoh
+4. JIKA kirim singkatan → jelaskan kepanjangan + arti
+5. JIKA ngobrol biasa → balas santai dan ramah
+
+Aturan: Santai, pakai emoji, jangan terlalu panjang, gunakan format Telegram (*bold*, _italic_).`;
 
   for (let i = 0; i < GROQ_KEYS.length; i++) {
     const key = nextKey();
-    console.log('Groq key ' + (i + 1) + '/' + GROQ_KEYS.length + '...');
     try {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
-          'Authorization': 'Bearer ' + key,
+          'Authorization': '***' + key,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -52,181 +64,97 @@ async function askAI(msg) {
         })
       });
 
-      const status = res.status;
-      const text = await res.text();
-      console.log('Groq key ' + (i + 1) + ': status=' + status);
-
-      if (status === 429) { console.log('Rate limit'); continue; }
-      if (status === 401) { console.log('Key invalid: ' + text.substring(0, 100)); continue; }
-      if (status !== 200) { console.log('Error: ' + text.substring(0, 200)); continue; }
-
-      const json = JSON.parse(text);
-      const result = json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content;
-      if (result) {
-        console.log('Groq OK!');
-        return result;
+      if (res.status !== 200) {
+        console.log('Groq key ' + (i + 1) + ': status ' + res.status);
+        continue;
       }
-      console.log('Response kosong');
+
+      const data = JSON.parse(await res.text());
+      const result = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      if (result) return result;
     } catch (e) {
-      console.log('Groq key ' + (i + 1) + ' error: ' + String(e));
+      console.log('Groq error: ' + e.message);
     }
   }
-  return 'Maaf, API sedang bermasalah. Coba lagi nanti ya~';
+  return '⚠️ API sedang bermasalah. Coba lagi nanti ya~';
 }
 
 // ============================================
-//  SESSION VIA GITHUB GIST
+//  TELEGRAM BOT
 // ============================================
 
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
-const SESSION_DIR = path.join(__dirname, 'session_data');
+const bot = new Telegraf(TELEGRAM_TOKEN);
 
-async function saveSession() {
-  try {
-    console.log('Save session...');
-    const files = {};
-    const walk = (dir, prefix) => {
-      if (!fs.existsSync(dir)) return;
-      let items;
-      try { items = fs.readdirSync(dir); } catch (e) { return; }
-      for (const item of items) {
-        const full = path.join(dir, item);
-        const rel = prefix ? prefix + '/' + item : item;
-        try {
-          const st = fs.lstatSync(full);
-          if (st.isSymbolicLink()) continue;
-          if (st.isDirectory()) { walk(full, rel); }
-          else if (st.size < 100000) { files[rel] = fs.readFileSync(full).toString('base64'); }
-        } catch (e) {}
-      }
-    };
-    walk(SESSION_DIR, '');
-    const count = Object.keys(files).length;
-    console.log('File session: ' + count);
-    if (!count) return;
-
-    const res = await fetch('https://api.github.com/gists', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + GITHUB_TOKEN,
-        'Content-Type': 'application/json',
-        'User-Agent': 'wa-bot'
-      },
-      body: JSON.stringify({
-        description: 'WA Bot Session',
-        files: { 'session.json': { content: JSON.stringify(files) } }
-      })
-    });
-    const gist = await res.json();
-    if (gist.id) {
-      console.log('SESSION TERSIMPAN! GIST_ID=' + gist.id);
-      console.log('Tambahkan GIST_ID=' + gist.id + ' di Railway Variables');
-    } else {
-      console.log('Gagal simpan: ' + JSON.stringify(gist).substring(0, 300));
-    }
-  } catch (e) {
-    console.log('Error saveSession: ' + String(e));
-  }
-}
-
-async function restoreSession() {
-  const gistId = process.env.GIST_ID;
-  if (!gistId) { console.log('GIST_ID belum diset'); return; }
-  try {
-    console.log('Restore dari Gist ' + gistId + '...');
-    const res = await fetch('https://api.github.com/gists/' + gistId, {
-      headers: { 'Authorization': 'Bearer ' + GITHUB_TOKEN, 'User-Agent': 'wa-bot' }
-    });
-    const gist = await res.json();
-    const file = gist.files && gist.files['session.json'];
-    if (!file) { console.log('File session tidak ada di Gist'); return; }
-
-    const data = JSON.parse(file.content);
-    if (!fs.existsSync(SESSION_DIR)) fs.mkdirSync(SESSION_DIR, { recursive: true });
-    for (const [fp, content] of Object.entries(data)) {
-      const full = path.join(SESSION_DIR, fp);
-      const dir = path.dirname(full);
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(full, Buffer.from(content, 'base64'));
-    }
-    console.log('Session di-restore!');
-  } catch (e) {
-    console.log('Error restore: ' + String(e));
-  }
-}
-
-// ============================================
-//  WHATSAPP CLIENT
-// ============================================
-
-restoreSession();
-
-const client = new Client({
-  authStrategy: new LocalAuth({ dataPath: SESSION_DIR }),
-  puppeteer: {
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--single-process']
-  }
+// /start
+bot.start((ctx) => {
+  ctx.reply(
+    '👋 *Halo! Aku Bot Slang & Translator!*\n\n' +
+    'Ketik apa saja, aku otomatis deteksi:\n\n' +
+    '🌐 *Terjemahan:* `translate gue mager ke jepang`\n' +
+    '🇬🇧 *Slang:* `apa bahasa gaulnya bucin?`\n' +
+    '🔤 *Singkatan:* `apa artinya ngl?`\n' +
+    '💬 *Chat biasa:* `halo`\n\n' +
+    'Coba ketik sesuatu! 👇',
+    { parse_mode: 'Markdown' }
+  );
 });
 
-client.on('qr', (qr) => {
-  const url = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(qr);
-  console.log('SCAN QR: ' + url);
+// /help
+bot.help((ctx) => {
+  ctx.reply(
+    '📖 *Cara Pakai Bot:*\n\n' +
+    '🌐 *Terjemahan:*\n' +
+    '  `translate gue mager ke jepang`\n' +
+    '  `terjemahkan ini ke korean: apa kabar?`\n\n' +
+    '🇬🇧 *Saran Slang:*\n' +
+    '  `apa slangnya bucin?`\n' +
+    '  `bahasa gaulnya mager dalam bahasa inggris`\n\n' +
+    '🔤 *Internet Slang:*\n' +
+    '  `apa artinya cz?`\ng  `ngl itu apa?`\n' +
+    '  `penjelasan singkatan: tbh, fr, ong`\n\n' +
+    '💬 *Chat biasa:*\n' +
+    '  Ketik apa saja, aku balas santai!\n\n' +
+    '_Bot otomatis deteksi mau kamu apa_ 😎',
+    { parse_mode: 'Markdown' }
+  );
 });
 
-client.on('ready', async () => {
-  console.log('BOT SIAP!');
-  console.log('Groq keys: ' + GROQ_KEYS.length);
-  if (GITHUB_TOKEN) await saveSession();
-});
+// Handle semua pesan teks
+bot.on('text', async (ctx) => {
+  const msg = ctx.message.text;
+  const userId = ctx.from.id;
+  console.log('[' + userId + '] ' + msg.substring(0, 80));
 
-client.on('authenticated', () => console.log('Auth OK!'));
-client.on('auth_failure', (m) => console.log('Auth fail: ' + m));
-client.on('disconnected', (r) => console.log('Disconnected: ' + r));
+  // Typing indicator
+  ctx.replyWithChatAction('typing');
+
+  const reply = await askAI(msg);
+  ctx.reply(reply, { parse_mode: 'Markdown' }).catch(() => {
+    // Fallback tanpa markdown kalau gagal
+    ctx.reply(reply);
+  });
+});
 
 // ============================================
-//  HANDLE PESAN
+//  MEMORY & START
 // ============================================
 
-const busy = {};
-
-client.on('message', async (message) => {
-  try {
-    const body = (message.body || '').trim();
-    if (!body || message.from === 'status@broadcast') return;
-    if (message.from.endsWith('@g.us') && !(message.mentionedIds && message.mentionedIds.length)) return;
-    if (busy[message.from]) { await message.reply('Sabar ya, masih proses...'); return; }
-
-    busy[message.from] = true;
-    console.log('Pesan: ' + body.substring(0, 80));
-
-    try {
-      const chat = await message.getChat();
-      await chat.sendStateTyping();
-      const reply = await askAI(body);
-      await message.reply(reply);
-      console.log('Reply OK');
-    } catch (e) {
-      console.log('Error reply: ' + String(e));
-      try { await message.reply('Error: ' + String(e)); } catch (_) {}
-    } finally {
-      delete busy[message.from];
-    }
-  } catch (e) {
-    console.log('Error handler: ' + String(e));
-  }
-});
-
-// Memory
 setInterval(() => {
   const mb = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
   if (global.gc) global.gc();
   if (mb > 300) { console.log('Memory ' + mb + 'MB, restart'); process.exit(1); }
 }, 60000);
 
-console.log('Starting...');
-client.initialize();
+console.log('Starting Telegram bot...');
+console.log('Groq keys: ' + GROQ_KEYS.length);
 
-process.on('SIGTERM', async () => { await client.destroy(); process.exit(0); });
-process.on('uncaughtException', (e) => console.log('Uncaught: ' + String(e)));
+bot.launch().then(() => {
+  console.log('Bot Telegram siap! ✅');
+}).catch(e => {
+  console.log('Error launch: ' + e.message);
+});
+
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
+process.on('uncaughtException', (e) => console.log('Err: ' + e.message));
 process.on('unhandledRejection', (e) => console.log('Unhandled: ' + String(e)));
